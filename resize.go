@@ -20,6 +20,11 @@ import (
 var borderColor string
 var outputDir string
 var edgeThreshold float64
+var minDPI int
+var targetWidth float64
+var targetHeight float64
+var borderWidth float64
+var bleedWidth float64
 
 func main() {
 	if len(os.Args) < 2 {
@@ -51,13 +56,43 @@ func main() {
 			Usage:       "threshold for edge detection",
 			Destination: &edgeThreshold,
 		},
+		cli.Float64Flag{
+			Name:        "target-width",
+			Value:       6.3 / 2.54,
+			Usage:       "minimum width (inches) to size the image up to, if it's too small",
+			Destination: &targetWidth,
+		},
+		cli.Float64Flag{
+			Name:        "target-height",
+			Value:       8.8 / 2.54,
+			Usage:       "minimum height (inches) to size the image up to, if it's too small",
+			Destination: &targetHeight,
+		},
+		cli.IntFlag{
+			Name:        "dpi",
+			Value:       300,
+			Usage:       "minimum dpi to scale up to if needed",
+			Destination: &minDPI,
+		},
+		cli.Float64Flag{
+			Name:        "border-width",
+			Value:       0.125,
+			Usage:       "width (inches) of the border to apply",
+			Destination: &borderWidth,
+		},
+		cli.Float64Flag{
+			Name:        "bleed-width",
+			Value:       0.125,
+			Usage:       "width (inches) of bleed to account for",
+			Destination: &bleedWidth,
+		},
 	}
 
 	app.Run(os.Args)
 }
 
 func run(c *cli.Context) {
-	os.MkdirAll(outputDir, os.FileMode(0644))
+	os.MkdirAll(outputDir, os.FileMode(0755))
 	for _, inFilename := range c.Args() {
 		fmt.Println(inFilename + " ->")
 		outFilename, err := convertImage(inFilename)
@@ -92,7 +127,9 @@ func convertImage(inFilename string) (string, error) {
 	}
 
 	outFilename := fmt.Sprintf("%s%c%s.png", outputDir, filepath.Separator, path.Base(inFilename[0:len(inFilename)-len(path.Ext(inFilename))]))
-	return outFilename, nil
+	err = saveImage(outFilename, resized)
+
+	return outFilename, err
 }
 
 func analyzeImage(img image.Image) (image.Rectangle, bool, color.Color, error) {
@@ -238,8 +275,27 @@ func padComponent(c string) string {
 	return c[0:2]
 }
 
-func resizeImage(source image.Image, clipRect image.Rectangle, needsRotation bool) (image.Image, error) {
-	return source, nil
+func resizeImage(source image.Image, clipRect image.Rectangle, needsRotation bool) (*image.RGBA, error) {
+	width := clipRect.Bounds().Max.X - clipRect.Bounds().Min.X
+	height := clipRect.Bounds().Max.Y - clipRect.Bounds().Min.Y
+	if needsRotation {
+		width, height = height, width
+	}
+	img := image.NewRGBA(image.Rect(0, 0, width, height))
+	for x := 0; x < width; x++ {
+		for y := 0; y < height; y++ {
+			xp, yp := x, y
+			if needsRotation {
+				xp, yp = yp, xp
+			}
+			img.Set(x, y, source.At(
+				clipRect.Bounds().Min.X+xp,
+				clipRect.Bounds().Min.Y+yp,
+			))
+		}
+	}
+
+	return img, nil
 }
 
 func applyBorders(resized image.Image, fillColor color.Color) error {
@@ -262,4 +318,13 @@ func loadImage(inFilename string) (image.Image, error) {
 	}
 	defer r.Close()
 	return f(r)
+}
+
+func saveImage(filename string, img *image.RGBA) error {
+	f, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return png.Encode(f, img)
 }
