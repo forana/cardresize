@@ -1,0 +1,15 @@
+{
+	"ImportPath": "github.com/forana/cardresize",
+	"GoVersion": "go1.6",
+	"GodepVersion": "v60",
+	"Packages": [
+		"./..."
+	],
+	"Deps": [
+		{
+			"ImportPath": "github.com/codegangsta/cli",
+			"Comment": "v1.14.0-12-g222ec6f",
+			"Rev": "222ec6fb7eb8a3da24cfa4017694ba45e3f1f516"
+		}
+	]
+}
