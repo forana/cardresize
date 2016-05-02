@@ -10,6 +10,10 @@
 			"ImportPath": "github.com/codegangsta/cli",
 			"Comment": "v1.14.0-12-g222ec6f",
 			"Rev": "222ec6fb7eb8a3da24cfa4017694ba45e3f1f516"
+		},
+		{
+			"ImportPath": "github.com/nfnt/resize",
+			"Rev": "4d93a29130b1b6aba503e2aa8b50f516213ea80e"
 		}
 	]
 }

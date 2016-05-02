@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/codegangsta/cli"
+	"github.com/nfnt/resize"
 )
 
 var borderColor string
@@ -116,10 +117,7 @@ func convertImage(inFilename string) (string, error) {
 		return "", err
 	}
 
-	resized, err := resizeImage(rawImage, clipRect, needsRotation, fillColor)
-	if err != nil {
-		return "", err
-	}
+	resized := resizeImage(rawImage, clipRect, needsRotation, fillColor)
 
 	outFilename := fmt.Sprintf("%s%c%s.png", outputDir, filepath.Separator, path.Base(inFilename[0:len(inFilename)-len(path.Ext(inFilename))]))
 	err = saveImage(outFilename, resized)
@@ -270,7 +268,7 @@ func padComponent(c string) string {
 	return c[0:2]
 }
 
-func resizeImage(source image.Image, clipRect image.Rectangle, needsRotation bool, fillColor color.Color) (*image.RGBA, error) {
+func resizeImage(source image.Image, clipRect image.Rectangle, needsRotation bool, fillColor color.Color) image.Image {
 	desiredInnerWidth := targetWidth - 2*borderWidth
 	desiredInnerHeight := targetHeight - 2*borderWidth
 	desiredRatio := desiredInnerWidth / desiredInnerHeight
@@ -310,9 +308,17 @@ func resizeImage(source image.Image, clipRect image.Rectangle, needsRotation boo
 	}
 
 	if actualDPI < minDPI {
+		dpiRatio := minDPI / actualDPI
+		fmt.Printf("\tScaling to %f%%\n", 100*dpiRatio)
+		return resize.Resize(
+			uint(math.Floor(float64(fullWidth)*dpiRatio)),
+			uint(math.Floor(float64(fullHeight)*dpiRatio)),
+			img,
+			resize.Lanczos3,
+		)
 	}
 
-	return img, nil
+	return img
 }
 
 func fillImage(img *image.RGBA, fillColor color.Color) {
@@ -341,7 +347,7 @@ func loadImage(inFilename string) (image.Image, error) {
 	return f(r)
 }
 
-func saveImage(filename string, img *image.RGBA) error {
+func saveImage(filename string, img image.Image) error {
 	f, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 	if err != nil {
 		return err
