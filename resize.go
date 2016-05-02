@@ -20,7 +20,7 @@ import (
 var borderColor string
 var outputDir string
 var edgeThreshold float64
-var minDPI int
+var minDPI float64
 var targetWidth float64
 var targetHeight float64
 var borderWidth float64
@@ -52,7 +52,7 @@ func main() {
 		},
 		cli.Float64Flag{
 			Name:        "edge-threshold",
-			Value:       0.3,
+			Value:       0.1,
 			Usage:       "threshold for edge detection",
 			Destination: &edgeThreshold,
 		},
@@ -68,7 +68,7 @@ func main() {
 			Usage:       "minimum height (inches) to size the image up to, if it's too small",
 			Destination: &targetHeight,
 		},
-		cli.IntFlag{
+		cli.Float64Flag{
 			Name:        "dpi",
 			Value:       300,
 			Usage:       "minimum dpi to scale up to if needed",
@@ -76,7 +76,7 @@ func main() {
 		},
 		cli.Float64Flag{
 			Name:        "border-width",
-			Value:       0.125,
+			Value:       3.0 / 32,
 			Usage:       "width (inches) of the border to apply",
 			Destination: &borderWidth,
 		},
@@ -116,12 +116,7 @@ func convertImage(inFilename string) (string, error) {
 		return "", err
 	}
 
-	resized, err := resizeImage(rawImage, clipRect, needsRotation)
-	if err != nil {
-		return "", err
-	}
-
-	err = applyBorders(resized, fillColor)
+	resized, err := resizeImage(rawImage, clipRect, needsRotation, fillColor)
 	if err != nil {
 		return "", err
 	}
@@ -145,8 +140,8 @@ func analyzeImage(img image.Image) (image.Rectangle, bool, color.Color, error) {
 		fillColor = color.Color(c)
 	}
 	needsRotation := clipRect.Bounds().Max.X-clipRect.Bounds().Min.X > clipRect.Bounds().Max.Y-clipRect.Bounds().Min.Y
-	fmt.Printf("bounds = %v\n", img.Bounds())
-	fmt.Printf("clip = %v\n", clipRect)
+	fmt.Printf("\tbounds = %v\n", img.Bounds())
+	fmt.Printf("\tclip = %v\n", clipRect)
 	return clipRect, needsRotation, fillColor, nil
 }
 
@@ -201,8 +196,8 @@ func detectEdge(img image.Image, xStart int, xEnd int, yStart int, yEnd int, xSt
 			return x, y, avg, nil
 		}
 		colors = append(colors, next)
-		if len(colors) > 5 {
-			colors = colors[len(colors)-5 : len(colors)-1]
+		if len(colors) > 3 {
+			colors = colors[len(colors)-3 : len(colors)-1]
 		}
 	}
 	return 0, 0, nil, fmt.Errorf("I couldn't figure out where one of the borders was - did you give me a monochrome image?")
@@ -275,31 +270,57 @@ func padComponent(c string) string {
 	return c[0:2]
 }
 
-func resizeImage(source image.Image, clipRect image.Rectangle, needsRotation bool) (*image.RGBA, error) {
+func resizeImage(source image.Image, clipRect image.Rectangle, needsRotation bool, fillColor color.Color) (*image.RGBA, error) {
+	desiredInnerWidth := targetWidth - 2*borderWidth
+	desiredInnerHeight := targetHeight - 2*borderWidth
+	desiredRatio := desiredInnerWidth / desiredInnerHeight
 	width := clipRect.Bounds().Max.X - clipRect.Bounds().Min.X
 	height := clipRect.Bounds().Max.Y - clipRect.Bounds().Min.Y
 	if needsRotation {
 		width, height = height, width
 	}
-	img := image.NewRGBA(image.Rect(0, 0, width, height))
+	actualRatio := float64(width) / float64(height)
+	calcWidth, calcHeight := width, height
+	if actualRatio < desiredRatio { // height is bigger - width needs to increase
+		calcWidth = int(math.Floor(float64(height) * desiredRatio))
+	} else if actualRatio > desiredRatio { // width is bigger - height needs to increase
+		calcHeight = int(math.Floor(float64(width) / desiredRatio))
+	}
+
+	actualDPI := float64(calcWidth) / desiredInnerWidth
+	fmt.Printf("\tsource DPI = %f\n", actualDPI)
+	offset := int(math.Floor((borderWidth + bleedWidth) * actualDPI))
+	fullWidth := calcWidth + 2*offset
+	fullHeight := calcHeight + 2*offset
+
+	img := image.NewRGBA(image.Rect(0, 0, fullWidth, fullHeight))
+	fillImage(img, fillColor)
+
 	for x := 0; x < width; x++ {
 		for y := 0; y < height; y++ {
 			xp, yp := x, y
 			if needsRotation {
-				xp, yp = yp, xp
+				xp, yp = yp, width-xp
 			}
-			img.Set(x, y, source.At(
+			img.Set(x+offset, y+offset, source.At(
 				clipRect.Bounds().Min.X+xp,
 				clipRect.Bounds().Min.Y+yp,
 			))
 		}
 	}
 
+	if actualDPI < minDPI {
+	}
+
 	return img, nil
 }
 
-func applyBorders(resized image.Image, fillColor color.Color) error {
-	return nil
+func fillImage(img *image.RGBA, fillColor color.Color) {
+	for x := img.Bounds().Min.X; x < img.Bounds().Max.X; x++ {
+		for y := img.Bounds().Min.Y; y < img.Bounds().Max.Y; y++ {
+			img.Set(x, y, fillColor)
+		}
+	}
 }
 
 func loadImage(inFilename string) (image.Image, error) {
